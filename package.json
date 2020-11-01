@@ -1,0 +1,20 @@
+{
+  "name": "homebridge-accessory-mi-robot-vacum-mop-p",
+  "version": "1.0.0",
+  "description": "Homebridge plugin for Mi Robot Vacuum-Mop P",
+  "main": "accessory.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Peiran Yao <xavieryao@me.com>",
+  "engines": {
+    "homebridge": ">=1.0.0"
+  },
+  "keywords": [
+    "homebridge-plugin"
+  ],
+  "files": [],
+  "dependencies": {
+    "axios": "^0.21.0"
+  }
+}
