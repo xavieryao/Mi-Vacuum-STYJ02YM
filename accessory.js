@@ -22,7 +22,7 @@ class MiVacuum {
             is_mop: 1,
             has_new_map: 0
         }; // default status
-        this.state_last_refreshed = 0;
+        this.stateLastRefreshed = 0;
 
 
         this.log = log;
@@ -38,21 +38,50 @@ class MiVacuum {
     }
 
     registerServices() {
-        this.registerBatteryService();
-
         this.informationService = new hap.Service.AccessoryInformation()
             .setCharacteristic(hap.Characteristic.Manufacturer, "Xiaomi")
             .setCharacteristic(hap.Characteristic.Model, "Mi Robot Vacuum-Mop P")
             .setCharacteristic(hap.Characteristic.FirmwareRevision, "3.5.3_0017");
+
+        this.registerBatteryService();
+        this.registerSwitchService();
+    }
+
+    registerSwitchService() {
+        this.mainSwitchService = new Service.Switch();
+        this.mainSwitchService.setCharacteristic(Characteristic.Name, "Cleaning");
+        this.mainSwitchService.getCharacteristic(Characteristic.On)
+            .on('get', (callback) => {
+                this.refreshStatus().then(status => {
+                    let cleaning = 1 ? (status.run_state == 3 || status.run_state == 4 || status.run_state == 6) : 0;
+                    callback(null, cleaning);
+                });
+            })
+            .on('set', (value, callback) => {
+                this.refreshStatus().then(status => {
+                    let cleaning = 1 ? (status.run_state == 3 || status.run_state == 4 || status.run_state == 6) : 0;
+                    if (cleaning == value) {
+                        callback(null);
+                    } else if (cleaning) {
+                        this.log.info("pause cleaning.");
+                        return axios.get(`${this.server}/pause`);
+                    } else {
+                        this.log.info("start cleaning.");
+                        return axios.get(`${this.server}/start`);
+                    }
+                }).then(resp => {
+                    if (resp.status == 200) {
+                        callback(null);
+                    }
+                });
+            });
     }
     
     registerBatteryService() {
-        // battery
         this.batteryService = new Service.BatteryService();
         this.batteryService.getCharacteristic(Characteristic.BatteryLevel)
             .on("get", (callback) => {
                 this.refreshStatus().then(status => {
-                    this.log.info("battery life", status.battery_life);
                     callback(null, status.battery_life);
                 });
             });
@@ -87,13 +116,14 @@ class MiVacuum {
         return [
             this.informationService,
             this.batteryService,
+            this.mainSwitchService
         ];
     }
 
     refreshStatus() {
         return new Promise((resolve, reject) => {
-            if (Date.now() - this.state_last_refreshed > 2000) {
-                this.state_last_refreshed = Date.now()
+            if (Date.now() - this.stateLastRefreshed > 1000) {
+                this.stateLastRefreshed = Date.now()
                 axios.get(`${this.server}/status`).then(resp => {
                     if (resp.status == 200) {
                         this.status = resp.data;
