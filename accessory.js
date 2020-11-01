@@ -44,16 +44,18 @@ class MiVacuum {
             .setCharacteristic(hap.Characteristic.FirmwareRevision, "3.5.3_0017");
 
         this.registerBatteryService();
+        this.registerFanService();
         this.registerSwitchService();
     }
 
-    registerSwitchService() {
-        this.mainSwitchService = new Service.Switch();
-        this.mainSwitchService.setCharacteristic(Characteristic.Name, "Cleaning");
-        this.mainSwitchService.getCharacteristic(Characteristic.On)
+    registerFanService() {
+        this.mainService = new Service.Fan();
+        this.mainService.setCharacteristic(Characteristic.Name, "Vacuum");
+        this.mainService.getCharacteristic(Characteristic.On)
             .on('get', (callback) => {
                 this.refreshStatus().then(status => {
                     let cleaning = 1 ? (status.run_state == 3 || status.run_state == 4 || status.run_state == 6) : 0;
+                    this.log.info("cleaning status", cleaning);
                     callback(null, cleaning);
                 });
             })
@@ -70,13 +72,58 @@ class MiVacuum {
                         return axios.get(`${this.server}/start`);
                     }
                 }).then(resp => {
+                    if (resp && resp.status == 200) {
+                        callback(null);
+                    }
+                });
+            });
+        
+        // suction grade
+        this.mainService.getCharacteristic(Characteristic.RotationSpeed)
+            .on('get', (callback) => {
+                this.refreshStatus().then(status => {
+                    callback(null, (status.suction_grade + 1) * 25);
+                });
+            })
+            .on('set', (value, callback) => {
+                if (value == 100) {value = 99}
+                let grade = Math.ceil(value / 25);
+                axios.get(`${this.server}/fanspeed/${grade}`)
+                    .then(resp => {
+                        if (resp == 200) callback(null);
+                    })
+            });
+    }
+
+    registerSwitchService() {
+        this.homeSwitchService = new Service.Switch();
+        this.homeSwitchService.subtype = "Home";
+        this.homeSwitchService.setCharacteristic(Characteristic.Name, "Docking");
+        this.homeSwitchService.getCharacteristic(Characteristic.On)
+            .on('get', (callback) => {
+                this.refreshStatus().then(status => {
+                    let returning = 1 ? status.run_state == 4 : 0;
+                    this.log.info("returning status", returning);
+                    callback(null, returning);
+                });
+            })
+            .on('set', (value, callback) => {
+                this.refreshStatus().then(status => {
+                    let returning = 1 ? status.run_state == 4 : 0;
+                    if (returning == value) {
+                        callback(null);
+                    } else {
+                        this.log.info("start docking.");
+                        return axios.get(`${this.server}/home`);
+                    }
+                }).then(resp => {
                     if (resp.status == 200) {
                         callback(null);
                     }
                 });
             });
     }
-    
+
     registerBatteryService() {
         this.batteryService = new Service.BatteryService();
         this.batteryService.getCharacteristic(Characteristic.BatteryLevel)
@@ -95,8 +142,8 @@ class MiVacuum {
         this.batteryService.getCharacteristic(Characteristic.StatusLowBattery)
             .on("get", (callback) => {
                 this.refreshStatus().then(status => {
-                        let low = 1 ? status.battery_life < 10 : 0;
-                        callback(null, low);
+                    let low = 1 ? status.battery_life < 10 : 0;
+                    callback(null, low);
                 });
             });
     }
@@ -116,7 +163,8 @@ class MiVacuum {
         return [
             this.informationService,
             this.batteryService,
-            this.mainSwitchService
+            this.mainService,
+            this.homeSwitchService
         ];
     }
 
